@@ -60,11 +60,11 @@ rm(train,test)
 # LIMPIEZA DE BASES DE DATOS
 #---------------------------------------------------------
 summary(df)
-df %>%
-  count(bathrooms, sort = TRUE) # 
-
+apply(df, 2, function(x) sum(is.na(x)))
+apply(df, 2, function(x) round(sum(is.na(x)/length(x))*100,2))
 
 # Tratar la variables de texto -------------------------------------------
+
 #------> DESCRIPTION -----------------------------------------------------
 df <- df %>%
   mutate(
@@ -76,8 +76,11 @@ df <- df %>%
       str_squish()  # eliminar espacios extra
   )
 
+# Mapear números
+numeros <- c("cero" = "0", "uno" = "1","dos" = "2","tres" = "3","cuatro" = "4",
+             "cinco" = "5","seis" = "6","siete" = "7","ocho" = "8","nueve" = "9")
 df <- df %>%
-  mutate(numbers_found = str_extract_all(description, "\\d+"))
+  mutate(description = str_replace_all(description, numeros))
 
 # Mapa de palabras 
 corpus <- Corpus(VectorSource(df$description)) # corpus
@@ -98,44 +101,77 @@ wordcloud(
   words = palabras$word,
   freq = palabras$freq,
   min.freq = 2,
-  max.words = 500,
+  max.words = 100,
   random.order = FALSE,
   colors = brewer.pal(8, "Dark2")
-)
+); rm(m, tdm, frecuencia, palabras)
 
+write.csv(palabras, "Palabras.csv")
+#-------------------------------------------------------------------------------
+# REEMPLAZAR NAs o 0s
+# ---------------------------  -------------------------------------------------
 
-# Número de habitaciones 
-sin_hab <- "habitaciones|cuartos|dormitorios|alcobas|recamaras|cuarto|habitacion|alcoba|recamara"
-df <- df %>%
-  mutate(n_habitaciones = as.integer(
-    sub(paste0(".*?(\\d+)\\s+(", sin_hab, ").*"), "\\1", description)
-  ))
+# -FUNCIONES--------------------------------------------------------------------
+extraer_contexto <- function(texto) {
+  palabras <- str_split(texto, "\\s+")[[1]]
+  indices <- which(palabras %in% claves)
+  antes <- if (any(indices > 1)) palabras[pmax(indices - 1, 1)] else character(0)
+  despues <- if (any(indices < length(palabras))) palabras[pmin(indices + 1, length(palabras))] else character(0)
+  list(
+    palabra_antes = paste(unique(antes), collapse = ", "),
+    palabra_despues = paste(unique(despues), collapse = ", ")
+  )
+}
+
+# --> Habitaciones
+claves <- c("habitaciones", "alcobas", "alcoba", "habitacion")
+df <- df %>% mutate(contexto = map(description, extraer_contexto)) %>%
+  unnest_wider(contexto)
 
 df <- df %>%
   mutate(
-    palabra_antes = str_extract(description, patron_antes),
-    palabra_despues = str_extract(description, patron_despues),
-    stem_antes = wordStem(palabra_antes, language = "spanish"),
-    stem_despues = wordStem(palabra_despues, language = "spanish")
-  )
+    palabra_antes_num = suppressWarnings(as.numeric(palabra_antes)), 
+    bedrooms = if_else(
+      bedrooms == 0 & !is.na(palabra_antes_num),
+      palabra_antes_num,
+      bedrooms
+    )
+  ) %>%
+  select(-palabra_antes_num, -palabra_antes, -palabra_despues)
+
+# ---> Baños (completar NAs)
+claves <- c("bano", "bao", "baos", "banos")
+df <- df %>% mutate(contexto = map(description, extraer_contexto)) %>%
+  unnest_wider(contexto)
+
+df <- df %>%
+  mutate(
+    palabra_antes_num = suppressWarnings(as.numeric(palabra_antes)), 
+    bathrooms = if_else(
+      is.na(bathrooms) & !is.na(palabra_antes_num),
+      palabra_antes_num, #Reemplazamos por numéricos
+      bathrooms
+    )
+  ) %>%
+  select(-palabra_antes_num, -palabra_antes, -palabra_despues)  #Logramos cubrir 3282
+
+# ---> En el resto de observaciones vamos a imputar un baño por cada cuarto y vamos a 
+# corregir lo que quedó mal con análisis de texto
+df <- df %>% mutate(bathrooms = if_else(is.na(bathrooms) | bathrooms > 11, bedrooms, bathrooms))
+
+# ---- Parqueadero o depósitos
+df <- df %>%
+  mutate(parqueadero = as.numeric(grepl("parqueadero|garaje|deposito|parqueaderos|garajes", description)))
+
+# ---- Terrazas o Balcones
+df <- df %>%
+  mutate(terraza = as.numeric(grepl("terraza|balcon|patio|balcn", description, ignore.case = TRUE)))
+
+# ---- Amenidades de Lujo (Walk-in Closet, Lavandería, Patio de ropas, cocina abierta)
 
 
-# Valores faltantes -------------------------------------------------------
-# Calcular cantidad y porcentaje de NA por columna
-# Primero vemos la cantidad
-apply(df, 2, function(x) sum(is.na(x)))
-# Ahora el porcentaje
-apply(df, 2, function(x) round(sum(is.na(x)/length(x))*100,2))
-# Vemos que las variables mas problematicas van a ser <surface_total>, <surface_covered>, <rooms> y <bathrooms>. Por lo que vamos a intentar encontrar maneras para 
-# completar los NA.
-
-# Para tratar los valores faltantes de <bathrooms> y <rooms> es importante ver que <bedrooms> si esta completa. Por lo que una buena idea seria imputar la moda
-# dependiendo del numero de alcobas que tenga el apto/casa. Sin embargo, se encuentra que cuando bedrooms es 0 rooms es NA, por lo que se busca una estrategía para extraer el número de 
-# alcobas o cuartos
-
-#Ya que no se pudo extraer el número de alcobas de todas las descripciones imputaremos por la moda, 
-moda <- function(x) {
-  return(as.numeric(names(which.max(table(x)))))
-}
-
-
+# ---- Seguridad 
+  
+# ---- Deposito o Garaje
+  
+# ---- 
