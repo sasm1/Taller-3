@@ -106,6 +106,7 @@ wordcloud(
 
 #write.csv(palabras, "Palabras.csv"); 
 rm(m, tdm, frecuencia, palabras)
+
 ################################################################################
 # REEMPLAZAR NAs o 0s
 ################################################################################
@@ -256,7 +257,7 @@ df <- df %>%
   ungroup()
 
 ################################################################################
-# CREAR NUEVAS VARIABLES :) 
+# CREAR NUEVAS VARIABLESINMUEBLE
 ################################################################################
 # VALOR X AMENIDADES------------------------------------------------------------
 # ----- Closet 
@@ -264,28 +265,18 @@ df <- df %>% mutate(
   closet = as.numeric(grepl("closet", description, ignore.case = TRUE) &
                          !grepl("walk-in closet", description, ignore.case = TRUE)))
 
-# ---- Amenidades del Conjunto (normales)
-claves <- c("salon comunal","salon social","saln","recepcion","zonas comunes", "lobby",
-            "visitantes","hall")
-
-
-# variable Ascensor 
-bd <- bd %>%
-  mutate(ascensor = as.numeric(grepl("ascensor", description)))
-
-# Variable vigilancia
-bd <- bd %>%
-  mutate(vigilancia = as.numeric(grepl("seguridad|vigilancia|porteria", description)))
-
-
-# ---- Seguridad 
+# ---- Salon Comunal y Recepción 
 df <- df %>%
-  mutate(vigilancia = as.numeric(grepl("seguridad|vigilancia|porteria", description)))
+  mutate(saloncomunal_recepcion = as.numeric(grepl("salon comunal| social|saln|recepcion|
+                                             lobby|hall",description)))
+# ---- Portería/ Seguridad
+df <- df %>%
+  mutate(seguridad = as.numeric(grepl("seguridad|vigilancia|porteria", description)))
   
 # ---- Piso
 df <- df %>%
   mutate(
-    piso_info = str_extract(piso_info, "(\\b\\w+\\b)?\\s*piso\\s*(\\b\\w+\\b)?")
+    piso_info = str_extract(description, "(\\b\\w+\\b)?\\s*piso\\s*(\\b\\w+\\b)?")
   ) %>%
   mutate(
     piso_texto = case_when(
@@ -310,9 +301,7 @@ df <- df %>%
       str_detect(piso_info, "diecinueve|19avo|19abo") ~ "19",
       str_detect(piso_info, "veinte|20avo|20abo") ~ "20",
       TRUE ~ str_extract(piso_info, "\\d+")
-    )
-  ) %>%
-  mutate(
+    ),
     piso_numerico = as.integer(piso_texto),
     piso_numerico = if_else(piso_numerico > 30, NA_integer_, piso_numerico)
   )  # Asumimos hasta piso 30 
@@ -325,4 +314,23 @@ df<- df %>%  # Llenamos con la mediana si no encuentra valor
   ungroup() %>% 
   select(-piso_texto, -piso_numerico, -piso_info)
 
+# ---- Amenidades de lujo 
+df <- df %>%
+  mutate(lujos = as.numeric(grepl("gimnasio|bbq|club|cancha|sauna
+                                  |squash|jacuzzi|gym|piscina|pisina|
+                                  moderno|duplex", description)))
+
+# ---- Remodelado o Nuevo
+df <- df %>% mutate(remodelado = as.numeric(grepl("remodelado|remodelada|remodelad|
+                                                  nuevo|remodlado|nuevos|nueva|nuevas", description)))
+
+################################################################################
+# CREAR NUEVAS VARIABLES PERO ESPACIALES
+################################################################################
 # VALOR X ZONA -----------------------------------------------------------------
+bogota <- opq(bbox = getbb ("Bogotá Colombia"))
+df_sf <- st_as_sf(df, coords = c("lon", "lat")) # Convertir a simple features
+st_crs(df_sf) <- 4326 # Sistema de coordenadas
+available_features()
+
+
