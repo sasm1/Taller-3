@@ -26,6 +26,7 @@ p_load(tidyverse, # Dataframes
        tmaptools,
        terra,
        geojsonR, # Datos espaciales 
+       geojsonio, 
        stringi, # Manipulación de texto 
        tm, # Stop word
        SnowballC, # Reeducir palabras a su raíz (Stemming)
@@ -45,8 +46,8 @@ test <- test %>%
   mutate(grupo ='test')%>%
   select(grupo, everything()) #(2)
 
-train <- train %>%
-  mutate(grupo = 'train') %>%
+train <- train%>%
+  mutate(grupo = 'train')%>%
   select(grupo, everything()) #(1)
 
 # Data completa ----------------------------------------------------
@@ -373,13 +374,13 @@ df$dist_tm_metros <- dist_min
 df
 
 # SEPARANDO SITPS Y TRANSMILENIOS (DATA EXTERNA)
-transmi <- geojson_read("Data_espacial/Estaciones_Troncales_de_TRANSMILENIO.geojson")
+transmi <- st_read("Data_espacial/Estaciones_Troncales_de_TRANSMILENIO.geojson")
 geometria.transmi <- transmi %>% mutate(longitud_estacion = st_coordinates(.)[, 1],
                                         latitud_estacion = st_coordinates(.)[, 2]) %>%
   select(nombre_estacion, latitud_estacion, longitud_estacion)
 
 
-SITPs <- geojson_read("Data_espacial/Paraderos_Zonales_del_SITP.geojson")
+SITPs <- st_read("Data_espacial/Paraderos_Zonales_del_SITP.geojson")
 geometria.SITPs <- SITPs %>% mutate(longitud = st_coordinates(.)[, 1],
                                     latitud = st_coordinates(.)[, 2]) %>%
   select(nombre, latitud, longitud)
@@ -388,19 +389,15 @@ transmi.sf <- st_as_sf(x = geometria.transmi, coords = c('longitud_estacion','la
                             crs = st_crs(df_sf)) # Convirtiendo en datos espaciales 
 SITPs.sf <- st_as_sf(x = geometria.SITPs, coords = c('longitud','latitud'),crs = st_crs(df_sf))
 
-rm(transmi,SITPs,geometria.transmi,geometria.SITPs)
-
 # Matrices de distancias para transmilenio y sitp
-matrix.distancias.tm    <- st_distance(x=df_sf, y = transmi.sf)
-matrix.distancias.sitp  <- st_distance(x=df_sf, y = sitp.sf)
+dist_transmi    <- st_distance(x=df_sf, y = transmi.sf)
+dist_SITPs  <- st_distance(x=df_sf, y = SITPs.sf)
+df$distancia_tm   <- apply(dist_transmi, 1, min) #distancias mínimas 
+df$distancia_sitp <- apply(dist_SITPs, 1, min) #distancias mínimas
 
-# Distancias minimas y agregar a base de datos
-bd$distancia_tm   <- apply(matrix.distancias.tm, 1, min) 
-
-
+rm(transmi,SITPs,geometria.transmi,geometria.SITPs, dist_transmi, dist_SITPs)
 
 # ---- Num Parques cercanos
-
 # Obtener parques desde OpenStreetMap y transformar a EPSG:4326
 parques_osm <- opq("Bogotá, Colombia") %>%
   add_osm_feature(key = "leisure", value = "park") %>%
