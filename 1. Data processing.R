@@ -25,7 +25,7 @@ p_load(tidyverse, # Dataframes
        xgboost, # Muestreo espacial para modelos de aprendizaje automático
        tmaptools,
        terra,
-       geojsonR,
+       geojsonR, # Datos espaciales 
        stringi, # Manipulación de texto 
        tm, # Stop word
        SnowballC, # Reeducir palabras a su raíz (Stemming)
@@ -311,7 +311,6 @@ df<- df %>%  # Llenamos con la mediana si no encuentra valor
   mutate(
     piso = if_else(is.na(piso_numerico), median(piso_numerico, na.rm = TRUE), piso_numerico)
   ) %>%
-  ungroup() %>% 
   select(-piso_texto, -piso_numerico, -piso_info)
 
 # ---- Amenidades de lujo 
@@ -324,13 +323,145 @@ df <- df %>%
 df <- df %>% mutate(remodelado = as.numeric(grepl("remodelado|remodelada|remodelad|
                                                   nuevo|remodlado|nuevos|nueva|nuevas", description)))
 
+# --- CONVIRTIENDO A FACTOR
+df <- df %>%
+  mutate(
+    cocina_lujo              = factor(cocina_lujo, levels = c(0, 1), labels = c("No", "Sí")),
+    cocina_estandar          = factor(cocina_estandar, levels = c(0, 1), labels = c("No", "Sí")),
+    parqueadero              = factor(parqueadero, levels = c(0, 1), labels = c("No", "Sí")),
+    terraza                  = factor(terraza, levels = c(0, 1), labels = c("No", "Sí")),
+    sala_comedor             = factor(sala_comedor, levels = c(0, 1), labels = c("No", "Sí")),
+    patio_lavanderia         = factor(patio_lavanderia, levels = c(0, 1), labels = c("No", "Sí")),
+    walkin_closet            = factor(walkin_closet, levels = c(0, 1), labels = c("No", "Sí")),
+    estudio                  = factor(estudio, levels = c(0, 1), labels = c("No", "Sí")),
+    closet                   = factor(closet, levels = c(0, 1), labels = c("No", "Sí")),
+    saloncomunal_recepcion   = factor(saloncomunal_recepcion, levels = c(0, 1), labels = c("No", "Sí")),
+    seguridad                = factor(seguridad, levels = c(0, 1), labels = c("No", "Sí")),
+    lujos                    = factor(lujos, levels = c(0, 1), labels = c("No", "Sí")),
+    remodelado               = factor(remodelado, levels = c(0, 1), labels = c("No", "Sí"))
+  )
+
+
 ################################################################################
 # CREAR NUEVAS VARIABLES PERO ESPACIALES
 ################################################################################
+
 # VALOR X ZONA -----------------------------------------------------------------
 bogota <- opq(bbox = getbb ("Bogotá Colombia"))
 df_sf <- st_as_sf(df, coords = c("lon", "lat")) # Convertir a simple features
 st_crs(df_sf) <- 4326 # Sistema de coordenadas
 available_features()
 
+#-------------------------------------------------------------------------------
+# ---- Transmilenio y SITP
+# Distancia de transporte público
+tm_osm <- opq("Bogotá, Colombia") %>%
+  add_osm_feature(key = "highway", value = "bus_stop") %>%
+  osmdata_sf()
+estaciones_tm <- tm_osm$osm_points
+propiedades_sf <- st_as_sf(df, coords = c("lon", "lat"), crs = 4326)
 
+coords_prop <- st_coordinates(propiedades_sf)
+coords_tm <- st_coordinates(estaciones_tm)
+
+dist_matrix <- geosphere::distm(coords_prop, coords_tm)
+dist_min <- apply(dist_matrix, 1, min)
+
+plot(st_geometry(estaciones_tm), main = "Estaciones de bus (incluye TM)")
+
+df$dist_tm_metros <- dist_min
+df
+
+# SEPARANDO SITPS Y TRANSMILENIOS (DATA EXTERNA)
+transmi <- geojson_read("Data_espacial/Estaciones_Troncales_de_TRANSMILENIO.geojson")
+geometria.transmi <- transmi %>% mutate(longitud_estacion = st_coordinates(.)[, 1],
+                                        latitud_estacion = st_coordinates(.)[, 2]) %>%
+  select(nombre_estacion, latitud_estacion, longitud_estacion)
+
+
+SITPs <- geojson_read("Data_espacial/Paraderos_Zonales_del_SITP.geojson")
+geometria.SITPs <- SITPs %>% mutate(longitud = st_coordinates(.)[, 1],
+                                    latitud = st_coordinates(.)[, 2]) %>%
+  select(nombre, latitud, longitud)
+
+transmi.sf <- st_as_sf(x = geometria.transmi, coords = c('longitud_estacion','latitud_estacion'),
+                            crs = st_crs(df_sf)) # Convirtiendo en datos espaciales 
+SITPs.sf <- st_as_sf(x = geometria.SITPs, coords = c('longitud','latitud'),crs = st_crs(df_sf))
+
+rm(transmi,SITPs,geometria.transmi,geometria.SITPs)
+
+# Matrices de distancias para transmilenio y sitp
+matrix.distancias.tm    <- st_distance(x=df_sf, y = transmi.sf)
+matrix.distancias.sitp  <- st_distance(x=df_sf, y = sitp.sf)
+
+# Distancias minimas y agregar a base de datos
+bd$distancia_tm   <- apply(matrix.distancias.tm, 1, min) 
+
+
+
+# ---- Num Parques cercanos
+
+# Obtener parques desde OpenStreetMap y transformar a EPSG:4326
+parques_osm <- opq("Bogotá, Colombia") %>%
+  add_osm_feature(key = "leisure", value = "park") %>%
+  osmdata_sf()
+
+parques <- parques_osm$osm_polygons %>% select(geometry) %>%
+  st_transform(crs = 4326) 
+propiedades_sf <- st_as_sf(df, coords = c("lon", "lat"), crs = 4326)
+buffer <- st_buffer(propiedades_sf, dist = 500)
+
+# Contar el número de parques dentro de cada buffer
+df$num_parques <- lengths(st_intersects(buffer, parques))
+
+
+# ---- Distancia al parque más cercano
+# Calcular centroides de los parques
+centroides <- st_centroid(parques) %>%
+  mutate(lon = st_coordinates(.)[, 1], lat = st_coordinates(.)[, 2])
+
+# Calcular la matriz de distancias entre propiedades y parques
+dist_matrix <- st_distance(propiedades_sf, parques)
+dim(dist_matrix)
+dist_min <- apply(dist_matrix, 1, min) 
+
+df <- df %>% mutate(distancia_min_parque = dist_min)
+p <- ggplot(df%>%sample_n(5000), aes(x = dist_tm_metros, y = price)) +
+  geom_point(col = "darkblue", alpha = 0.4) +
+  labs(x = "Distancia mínima a un parque en metros (log-scale)", 
+       y = "Valor de venta  (log-scale)",
+       title = "Relación entre la proximidad a un parque y el precio del immueble") +
+  scale_x_log10() +
+  scale_y_log10(labels = scales::dollar) +
+  theme_bw()
+ggplotly(p)
+
+#---- Densidad de servicios
+# Obtener servicios y comercios de OSM
+servicios <- opq("Bogotá, Colombia") %>%
+  add_osm_feature(key = "amenity", 
+                  value = c("restaurant", "cafe", "bank", "pharmacy", 
+                            "supermarket", "school", "hospital", "marketplace")) %>%
+  osmdata_sf()
+
+
+puntos_servicios <- servicios$osm_points
+radio <- 800  # metros
+todos_buffers <- st_buffer(propiedades_sf, dist = radio)
+intersecciones <- st_intersects(todos_buffers, puntos_servicios)
+df$service_density <- lengths(intersecciones)
+
+head(df)
+
+# Ciclorutas 
+datos.osm1[[2]] <- bogota %>%
+  add_osm_feature(key = "highway", value= "cycleway")%>%
+  osmdata_sf()
+
+# centro urbanos de servicios
+datos.osm1[[3]] <- bogota %>%
+  add_osm_feature(key = "landuse", value= "commercial")%>%
+  osmdata_sf()
+
+nombres.datos.osm <- c('mall','cycleway','commercial')
+names(datos.osm1) <- nombres.datos.osm
