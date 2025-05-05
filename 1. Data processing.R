@@ -45,8 +45,8 @@ test <- test %>%
   mutate(grupo ='test')%>%
   select(grupo, everything()) #(2)
 
-train <- train%>%
-  mutate(grupo = 'train')%>%
+train <- train %>%
+  mutate(grupo = 'train') %>%
   select(grupo, everything()) #(1)
 
 # Data completa ----------------------------------------------------
