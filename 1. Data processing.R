@@ -342,6 +342,7 @@ df <- df %>%
     remodelado               = factor(remodelado, levels = c(0, 1), labels = c("No", "Sí"))
   )
 
+rm(corpus)
 
 ################################################################################
 # CREAR NUEVAS VARIABLES PERO ESPACIALES
@@ -352,8 +353,98 @@ bogota <- opq(bbox = getbb ("Bogotá Colombia"))
 df_sf <- st_as_sf(df, coords = c("lon", "lat")) # Convertir a simple features
 st_crs(df_sf) <- 4326 # Sistema de coordenadas
 available_features()
-
 #-------------------------------------------------------------------------------
+# Extraer datos OSM -------------------------------------------------------
+datos.osm1 <- list()
+# ------>  Ciclovias 
+datos.osm1[[1]] <- bogota %>%
+  add_osm_feature(key = "highway", value= "cycleway")%>%
+  osmdata_sf()
+
+# ------> Tipo de uso del suelo
+datos.osm1[[2]] <- bogota %>%
+  add_osm_feature(key = "landuse", value= "commercial")%>%
+  osmdata_sf()
+
+nombres.datos.osm <- c('cycleway','commercial')
+names(datos.osm1) <- nombres.datos.osm
+
+# ------> Amenidades y leasure
+amenities <- available_tags('amenity')
+leisures   <- available_tags('leisure')
+
+tags_df <- rbind(amenities, leisures)
+
+extraer_osm_por_tags <- function(bbox_sf, tag_df) {
+  tag_df[1, 'Value'] <- paste0("unique_", tag_df[1, 'Value'])
+  # Reemplazo para el primer valor (evita errores si hay duplicados)
+  resultados <- list()
+  nombres    <- list()
+  indice     <- 1
+  
+  for (k in seq_len(nrow(tag_df))) {
+    key_k   <- as.character(tag_df[k, 'Key'])
+    value_k <- as.character(tag_df[k, 'Value'])
+    
+    resultado <- tryCatch({
+      bbox_sf %>%
+        add_osm_feature(key = key_k, value = value_k) %>%
+        osmdata_sf()
+    }, error = function(e) return(NULL))
+    
+    if (is.null(resultado)) next
+    if (nrow(resultado$osm_polygons) == 0) next
+    
+    resultados[[indice]] <- resultado
+    
+    # Detectar el nombre real
+    vgrepl <- Vectorize(grepl, 'pattern')
+    posibles <- as.character(tag_df$Value)[vgrepl(as.character(tag_df$Value), resultado$overpass_call)]
+    nombres[[indice]] <- posibles[which.max(nchar(posibles))]
+    
+    indice <- indice + 1
+  }
+  
+  names(resultados) <- nombres
+  return(resultados)
+}
+
+datos.osm2 <- extraer_osm_por_tags(bogota, tags_df)
+datos.osm         <- c(datos.osm1, datos.osm2)
+nombres.datos.osm <- names(datos.osm)
+
+# Geometria variables OSM -------------------------------------------------
+# 1. Extraer geometría (solo polígonos válidos)
+geometria.osm <- lapply(datos.osm, function(x) {
+  poligonos <- x$osm_polygons %>%
+    select(osm_id, geometry) %>%
+    st_make_valid()
+  poligonos[st_is_valid(poligonos), ]
+})
+
+# 2. Calcular centroides directamente con sf (sin convertir a Spatial)
+centroides.osm <- lapply(geometria.osm, function(g) {
+  suppressWarnings(st_centroid(g))
+})
+
+coordenadas.x.centroides <- lapply(centroides.osm, function(x) unlist(purrr::map(x$geometry, ~.x[1])))
+coordenadas.y.centroides <- lapply(centroides.osm, function(x) unlist(purrr::map(x$geometry, ~.x[2])))
+
+# 3. Sacar distancias
+# Matrices de distancias para cada observacion a los centroides en <centroides.osm>
+matrix.distancias.osm  <- lapply(centroides.osm, function(x) st_distance(x=df_sf, y =x))
+
+# Distancias minimas 
+distancias.minimas.osm <- lapply(matrix.distancias.osm, function(x) apply(x,1,min))
+
+# Agregar las distancias minimas a la base de datos
+df <- df %>% ungroup()
+for(i in seq_along(distancias.minimas.osm)){
+  nombre.columna <- paste0('distancia_',nombres.datos.osm[i])
+  df <- df %>% mutate(!!nombre.columna := distancias.minimas.osm[[i]])
+}
+
+
 # ---- Transmilenio y SITP
 # Distancia de transporte público
 tm_osm <- opq("Bogotá, Colombia") %>%
@@ -411,6 +502,8 @@ buffer <- st_buffer(propiedades_sf, dist = 500)
 # Contar el número de parques dentro de cada buffer
 df$num_parques <- lengths(st_intersects(buffer, parques))
 
+save(df,df_sf, file = "temporal.RData")
+
 
 # ---- Distancia al parque más cercano
 # Calcular centroides de los parques
@@ -448,17 +541,29 @@ todos_buffers <- st_buffer(propiedades_sf, dist = radio)
 intersecciones <- st_intersects(todos_buffers, puntos_servicios)
 df$service_density <- lengths(intersecciones)
 
-head(df)
 
-# Ciclorutas 
-datos.osm1[[2]] <- bogota %>%
-  add_osm_feature(key = "highway", value= "cycleway")%>%
-  osmdata_sf()
 
-# centro urbanos de servicios
-datos.osm1[[3]] <- bogota %>%
-  add_osm_feature(key = "landuse", value= "commercial")%>%
-  osmdata_sf()
+# ---- MANZANAS
+manzanas <- st_read("Data_espacial/manzana/MANZANA.geojson")
+manzanas <- st_transform(manzanas, crs = st_crs(df_sf))
+df_sf <- st_join(df_sf, manzanas, join = st_within)
 
-nombres.datos.osm <- c('mall','cycleway','commercial')
-names(datos.osm1) <- nombres.datos.osm
+
+# ---- BARRIOS
+barrios <- st_read("Data_espacial/barrios-bogota/barrios-bogota.geojson")
+barrios <- st_transform(barrios, crs = st_crs(df_sf))
+df_sf <- st_join(df_sf, barrios, join = st_within)
+
+
+# ---- ESTRATO
+estrato <- st_read("Data_espacial/estrato-socioeconomico-bogota-2019/estrato-socioeconomico-bogota-2019.geojson")
+estrato <- st_transform(estrato, crs = st_crs(df_sf))
+df_sf <- st_join(df_sf, estrato, join = st_within)
+
+# ---- VALOR DE REFERENCIA POR MANZANA CATASTRAL
+catastro <- st_read("Data_espacial/valor-de-referencia-por-manzana-catastral/valor-de-referencia-por-manzana-catastral.geojson")
+
+
+# Identificar el tipo de geometria 
+geom_type <- st_geometry_type(catastro)
+print(table(geom_type))
