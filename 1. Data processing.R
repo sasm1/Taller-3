@@ -200,6 +200,10 @@ summary(df)
 =======
   mutate(terraza = as.numeric(grepl("terraza|balcon|patio|balcn|jardin|jardn", description)))
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+>>>>>>> main
+>>>>>>> Stashed changes
 =======
 >>>>>>> main
 >>>>>>> Stashed changes
@@ -208,7 +212,10 @@ summary(df)
 df <- df %>%
   mutate(sala_comedor = as.numeric(grepl("sala|salacomedor|comedor|sala comedor", description)))
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 >>>>>>> main
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
 
@@ -216,6 +223,7 @@ df <- df %>%
 df <- df %>%
   mutate(patio_lavanderia = as.numeric(grepl("lavandera|balcon|patio ropas|balcn|patio interior", description)))
 
+<<<<<<< Updated upstream
 <<<<<<< Updated upstream
 <<<<<<< HEAD
 # ---- Sala/ Comedor 
@@ -228,6 +236,8 @@ df <- df %>%
 
 =======
 >>>>>>> main
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
 # ---- Walk-in Closets (Lujo)
@@ -286,11 +296,15 @@ df <- df %>%
 
 ################################################################################
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 <<<<<<< HEAD
 # CREAR NUEVAS VARIABLES INMUEBLE
 =======
 # CREAR NUEVAS VARIABLESINMUEBLE
 >>>>>>> main
+=======
+# CREAR NUEVAS VARIABLESINMUEBLE
+>>>>>>> Stashed changes
 =======
 # CREAR NUEVAS VARIABLESINMUEBLE
 >>>>>>> Stashed changes
@@ -501,7 +515,10 @@ tm_osm <- opq("Bogotá, Colombia") %>%
 
 =======
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
 # ---- Piso
 df <- df %>%
   mutate(
@@ -678,6 +695,9 @@ for(i in seq_along(distancias.minimas.osm)){
 tm_osm <- opq("Bogotá, Colombia") %>%
   add_osm_feature(key = "highway", value = "bus_stop") %>%
   osmdata_sf()
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 >>>>>>> main
 estaciones_tm <- tm_osm$osm_points
@@ -695,6 +715,7 @@ df$dist_tm_metros <- dist_min
 df
 
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 # SEPARANDO SITPS Y TRANSMILENIOS (DATA EXTERNA)
 transmi <- st_read("Data_espacial/Estaciones_Troncales_de_TRANSMILENIO.geojson")
 geometria.transmi <- transmi %>% mutate(longitud_estacion = st_coordinates(.)[, 1],
@@ -702,6 +723,8 @@ geometria.transmi <- transmi %>% mutate(longitud_estacion = st_coordinates(.)[, 
   select(nombre_estacion, latitud_estacion, longitud_estacion)
 
 =======
+=======
+>>>>>>> Stashed changes
 <<<<<<< HEAD
 # ---- Num Parques cercanos
 
@@ -712,6 +735,9 @@ geometria.transmi <- transmi %>% mutate(longitud_estacion = st_coordinates(.)[, 
                                         latitud_estacion = st_coordinates(.)[, 2]) %>%
   select(nombre_estacion, latitud_estacion, longitud_estacion)
 
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 
 SITPs <- st_read("Data_espacial/Paraderos_Zonales_del_SITP.geojson")
@@ -733,6 +759,10 @@ rm(transmi,SITPs,geometria.transmi,geometria.SITPs, dist_transmi, dist_SITPs)
 
 # ---- Num Parques cercanos
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+>>>>>>> main
+>>>>>>> Stashed changes
 =======
 >>>>>>> main
 >>>>>>> Stashed changes
@@ -751,6 +781,7 @@ df$num_parques <- lengths(st_intersects(buffer, parques))
 
 <<<<<<< HEAD
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
 save(df,df_sf, file = "temporal.RData")
 
@@ -758,6 +789,8 @@ save(df,df_sf, file = "temporal.RData")
 
 # ---- Distancia al parque más cercano
 =======
+=======
+>>>>>>> Stashed changes
 
 # ---- Distancia al parque más cercano
 
@@ -767,6 +800,9 @@ save(df,df_sf, file = "temporal.RData")
 
 # ---- Distancia al parque más cercano
 >>>>>>> main
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 # Calcular centroides de los parques
 centroides <- st_centroid(parques) %>%
@@ -805,16 +841,22 @@ df$service_density <- lengths(intersecciones)
 
 <<<<<<< HEAD
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
 
 
 >>>>>>> main
 =======
+=======
+>>>>>>> Stashed changes
 head(df)
 
 =======
 
 
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 # ---- MANZANAS
 manzanas <- st_read("Data_espacial/manzana/MANZANA.geojson")
@@ -841,9 +883,12 @@ catastro <- st_read("Data_espacial/valor-de-referencia-por-manzana-catastral/val
 geom_type <- st_geometry_type(catastro)
 print(table(geom_type))
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 <<<<<<< HEAD
 
 =======
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
 >>>>>>> main
