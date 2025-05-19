@@ -194,10 +194,22 @@ df <- df %>%
 
 # ---- Terrazas o Balcones o jardines o patios interiores
 df <- df %>%
+<<<<<<< HEAD
   mutate(terraza = as.numeric(grepl("terraza|balcon|patio|balcn", description, ignore.case = TRUE)))
 summary(df)
+=======
+  mutate(terraza = as.numeric(grepl("terraza|balcon|patio|balcn|jardin|jardn", description)))
 
+# ---- Sala/ Comedor 
+df <- df %>%
+  mutate(sala_comedor = as.numeric(grepl("sala|salacomedor|comedor|sala comedor", description)))
+>>>>>>> main
 
+# ---- Patio de ropas o lavandería
+df <- df %>%
+  mutate(patio_lavanderia = as.numeric(grepl("lavandera|balcon|patio ropas|balcn|patio interior", description)))
+
+<<<<<<< HEAD
 # ---- Sala/ Comedor 
 df <- df %>%
   mutate(sala_comedor = as.numeric(grepl("sala|salacomedor|comedor|sala comedor", description)))
@@ -206,6 +218,8 @@ df <- df %>%
 df <- df %>%
   mutate(patio_lavanderia = as.numeric(grepl("lavandera|balcon|patio ropas|balcn|patio interior", description)))
 
+=======
+>>>>>>> main
 # ---- Walk-in Closets (Lujo)
 df <- df %>%
   mutate(walkin_closet = as.numeric(grepl("walkin|walk-in|walk-in closet", description)))
@@ -261,7 +275,11 @@ df <- df %>%
   ungroup()
 
 ################################################################################
+<<<<<<< HEAD
 # CREAR NUEVAS VARIABLES INMUEBLE
+=======
+# CREAR NUEVAS VARIABLESINMUEBLE
+>>>>>>> main
 ################################################################################
 # VALOR X AMENIDADES------------------------------------------------------------
 # ----- Closet 
@@ -277,10 +295,13 @@ df <- df %>%
 df <- df %>%
   mutate(seguridad = as.numeric(grepl("seguridad|vigilancia|porteria", description)))
   
+<<<<<<< HEAD
 # ---- Deposito o Garaje
 
 
 
+=======
+>>>>>>> main
 # ---- Piso
 df <- df %>%
   mutate(
@@ -453,13 +474,19 @@ for(i in seq_along(distancias.minimas.osm)){
 
 
 # ---- Transmilenio y SITP
+<<<<<<< HEAD
 ####Variables externas####
 
+=======
+>>>>>>> main
 # Distancia de transporte público
 tm_osm <- opq("Bogotá, Colombia") %>%
   add_osm_feature(key = "highway", value = "bus_stop") %>%
   osmdata_sf()
+<<<<<<< HEAD
 
+=======
+>>>>>>> main
 estaciones_tm <- tm_osm$osm_points
 propiedades_sf <- st_as_sf(df, coords = c("lon", "lat"), crs = 4326)
 
@@ -512,6 +539,11 @@ buffer <- st_buffer(propiedades_sf, dist = 500)
 # Contar el número de parques dentro de cada buffer
 df$num_parques <- lengths(st_intersects(buffer, parques))
 
+<<<<<<< HEAD
+=======
+save(df,df_sf, file = "temporal.RData")
+
+>>>>>>> main
 
 # ---- Distancia al parque más cercano
 # Calcular centroides de los parques
@@ -549,6 +581,11 @@ todos_buffers <- st_buffer(propiedades_sf, dist = radio)
 intersecciones <- st_intersects(todos_buffers, puntos_servicios)
 df$service_density <- lengths(intersecciones)
 
+<<<<<<< HEAD
+=======
+
+
+>>>>>>> main
 # ---- MANZANAS
 manzanas <- st_read("Data_espacial/manzana/MANZANA.geojson")
 manzanas <- st_transform(manzanas, crs = st_crs(df_sf))
@@ -573,4 +610,7 @@ catastro <- st_read("Data_espacial/valor-de-referencia-por-manzana-catastral/val
 # Identificar el tipo de geometria 
 geom_type <- st_geometry_type(catastro)
 print(table(geom_type))
+<<<<<<< HEAD
 
+=======
+>>>>>>> main
