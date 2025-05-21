@@ -20,14 +20,123 @@ p_load(tidyverse, # Manipular dataframes
        dplyr,
        parsnip, # elastic net
        dials, # elastic net tunning
-       recipies, # Recetas
-       workflows)   # Crear worklows RN
+       recipes, # Recetas
+       workflows,# Crear worklows RN
+       metrics,# Evaluación de metricas para Ml
+       tidymodels,#modelos
+       randomforest,
+       ranger,
+       rlang,
+       tune)   
 
 # Cargar los datos --------------------------------------------------------
-load("Datos_limpios.RData")
+load("temporal.RData")
 
-################################################################################
-# GRADIENT BOOSTING
+"grupo" %in% colnames(df)
+
+# LINEAR REGRESSION-----------------------------------------------------------------
+
+
+# ELASTIC NET -----------------------------------------------------------------
+
+
+# CARTS ------------------------------------------------------------------------
+
+
+# RANDOM FOREST-----------------------------------------------------------------
+vars<- c("price","city", "year", "surface_imputado", "rooms",
+                     "bedrooms", "bathrooms", "property_type",
+                     "cocina_lujo", "cocina_estandar", "parqueadero", "terraza",
+                     "sala_comedor", "patio_lavanderia", "walkin_closet", "estudio",
+                     "closet", "saloncomunal_recepcion", "seguridad", "piso",
+                     "lujos", "remodelado", "distancia_cycleway", "distancia_commercial",
+                     "distancia_bank", "distancia_bar", "distancia_bus_station",
+                     "distancia_cafe", "distancia_clinic", "distancia_college",
+                     "distancia_hospital", "distancia_marketplace")
+
+RF_data  <- df %>% filter(grupo == "train") %>%  select(all_of(vars)) 
+
+
+# A. Recetas
+rec_rf <- recipe(price ~ ., data = RF_data) %>%
+  step_unknown(all_nominal_predictors()) %>%
+  step_impute_mean(all_numeric_predictors()) %>%
+  step_novel(all_nominal_predictors()) %>%
+  step_zv(all_predictors()) 
+
+prepped_rf <- prep(rec_rf, training = RF_data)
+RF_data<- bake(prepped_rf, new_data = RF_data)
+
+set.seed(123)
+split_rf <- initial_split(RF_data, prop = 0.8)
+RF_train <- training(split_rf)
+RF_test <- testing(split_rf)
+
+# B. Definir fórmulas con distintas combinaciones de variables
+formulas <- list(
+  modelo1 = price ~ surface_imputado + bathrooms + rooms + bedrooms + estudio + parqueadero + distancia_college,
+  modelo2 = price ~ surface_imputado + bathrooms + bedrooms + parqueadero + distancia_hospital + distancia_marketplace,
+  modelo3 = price ~ surface_imputado + lujos + remodelado + terraza + seguridad + piso + distancia_commercial,
+  modelo4 = price ~ surface_imputado + rooms + estudio + walkin_closet + cocina_lujo + distancia_cafe,
+  modelo5 = price ~ surface_imputado + bathrooms + patio_lavanderia + saloncomunal_recepcion + distancia_bank + distancia_bus_station
+)
+
+# C. Entrenar y evaluar cada modelo
+modelos_rf <- list()
+resultados <- data.frame(modelo = character(), MAE = numeric(), stringsAsFactors = FALSE)
+
+for (nombre in names(formulas)) {
+  rf_fit <- ranger(
+    formula = formulas[[nombre]],
+    data = RF_train,
+    num.trees = 500,
+    mtry = floor(sqrt(ncol(RF_train))),
+    min.node.size = 5,
+    importance = "impurity"
+  )
+  
+  modelos_rf[[nombre]] <- rf_fit
+
+  pred <- predict(rf_fit, data = RF_test)$predictions
+
+  mae_val <- mae(RF_test$price, pred)
+  
+  resultados <- rbind(resultados, data.frame(modelo = nombre, MAE = mae_val))
+}
+
+resultados <- resultados[order(resultados$MAE), ]
+print(resultados)
+
+#D.Predicción con el mejor modelo 
+df_test <- df %>%
+  filter(grupo == "test")  
+df_test_preprocesado <- bake(prepped_rf, new_data = df_test)
+
+rf2_fit <- ranger(
+  formula = price ~ surface_imputado + bathrooms + rooms + bedrooms + cocina_estandar + parqueadero + distancia_marketplace,
+  data = RF_train,
+  num.trees = 500,
+  mtry = floor(sqrt(ncol(RF_train))),
+  min.node.size = 5,
+  importance = "impurity"
+)
+
+predicciones_RF <- predict(rf2_fit, data = df_test)$predictions
+predicciones_RF <- data.frame(
+  property_id = df_test$property_id,
+  price = predicciones  
+)
+
+write.csv(predicciones_RF,"RF_M2.csv")
+
+# XGBOOST-----------------------------------------------------------------
+
+
+
+# ADABOOST M1 -----------------------------------------------------------------
+
+
+# GRADIENT BOOSTING ------------------------------------------------------------
 
 
 ################################################################################
