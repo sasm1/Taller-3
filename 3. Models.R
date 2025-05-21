@@ -72,7 +72,7 @@ split_rf <- initial_split(RF_data, prop = 0.8)
 RF_train <- training(split_rf)
 RF_test <- testing(split_rf)
 
-# B. Definir fórmulas con distintas combinaciones de variables
+# B. Distintas combinaciones de variables
 formulas <- list(
   modelo1 = price ~ surface_imputado + bathrooms + rooms + bedrooms + estudio + parqueadero + distancia_college,
   modelo2 = price ~ surface_imputado + bathrooms + bedrooms + parqueadero + distancia_hospital + distancia_marketplace,
