@@ -27,14 +27,17 @@ p_load(tidyverse, # Manipular dataframes
        randomforest,
        ranger,
        rlang,
-       tune)   
+       tune,
+       adabag,
+       caret,
+       gmb,
+       xgboost,
+       spatialsample,
+       sf)
 
-# Cargar los datos --------------------------------------------------------
 load("temporal.RData")
 
-"grupo" %in% colnames(df)
-
-# LINEAR REGRESSION-----------------------------------------------------------------
+# LINEAR REGRESSION  -----------------------------------------------------------
 
 
 # ELASTIC NET -----------------------------------------------------------------
@@ -44,14 +47,14 @@ load("temporal.RData")
 
 
 # RANDOM FOREST-----------------------------------------------------------------
-vars<- c("price","city", "year", "surface_imputado", "rooms",
+vars<- c("price", "year", "surface_imputado", "rooms",
                      "bedrooms", "bathrooms", "property_type",
                      "cocina_lujo", "cocina_estandar", "parqueadero", "terraza",
                      "sala_comedor", "patio_lavanderia", "walkin_closet", "estudio",
                      "closet", "saloncomunal_recepcion", "seguridad", "piso",
-                     "lujos", "remodelado", "distancia_cycleway", "distancia_commercial",
-                     "distancia_bank", "distancia_bar", "distancia_bus_station",
-                     "distancia_cafe", "distancia_clinic", "distancia_college",
+                     "lujos", "remodelado",  "distancia_commercial",
+                     "distancia_bank", "distancia_bus_station",
+                     "distancia_cafe",  "distancia_college",
                      "distancia_hospital", "distancia_marketplace")
 
 RF_data  <- df %>% filter(grupo == "train") %>%  select(all_of(vars)) 
@@ -72,19 +75,19 @@ split_rf <- initial_split(RF_data, prop = 0.8)
 RF_train <- training(split_rf)
 RF_test <- testing(split_rf)
 
-# B. Definir fórmulas con distintas combinaciones de variables
+# B. Distintas combinaciones de variables
 formulas <- list(
   modelo1 = price ~ surface_imputado + bathrooms + rooms + bedrooms + estudio + parqueadero + distancia_college,
   modelo2 = price ~ surface_imputado + bathrooms + bedrooms + parqueadero + distancia_hospital + distancia_marketplace,
   modelo3 = price ~ surface_imputado + lujos + remodelado + terraza + seguridad + piso + distancia_commercial,
   modelo4 = price ~ surface_imputado + rooms + estudio + walkin_closet + cocina_lujo + distancia_cafe,
-  modelo5 = price ~ surface_imputado + bathrooms + patio_lavanderia + saloncomunal_recepcion + distancia_bank + distancia_bus_station
+  modelo5 = price ~ surface_imputado + bathrooms + patio_lavanderia + saloncomunal_recepcion + distancia_bank + distancia_bus_station,
+  modelo6 = price ~ year + surface_imputado + rooms + bedrooms+ bathrooms + property_type +cocina_lujo + cocina_estandar+ parqueadero+terraza+sala_comedor+patio_lavanderia+lujos
 )
 
 # C. Entrenar y evaluar cada modelo
 modelos_rf <- list()
 resultados <- data.frame(modelo = character(), MAE = numeric(), stringsAsFactors = FALSE)
-
 for (nombre in names(formulas)) {
   rf_fit <- ranger(
     formula = formulas[[nombre]],
@@ -96,13 +99,14 @@ for (nombre in names(formulas)) {
   )
   
   modelos_rf[[nombre]] <- rf_fit
-
+  
   pred <- predict(rf_fit, data = RF_test)$predictions
-
-  mae_val <- mae(RF_test$price, pred)
+  
+  mae_val <- mean(abs(RF_test$price - pred))
   
   resultados <- rbind(resultados, data.frame(modelo = nombre, MAE = mae_val))
 }
+
 
 resultados <- resultados[order(resultados$MAE), ]
 print(resultados)
@@ -113,7 +117,7 @@ df_test <- df %>%
 df_test_preprocesado <- bake(prepped_rf, new_data = df_test)
 
 rf2_fit <- ranger(
-  formula = price ~ surface_imputado + bathrooms + rooms + bedrooms + cocina_estandar + parqueadero + distancia_marketplace,
+  formula = price ~ surface_imputado + bathrooms + bedrooms + parqueadero + distancia_hospital + distancia_marketplace,
   data = RF_train,
   num.trees = 500,
   mtry = floor(sqrt(ncol(RF_train))),
@@ -132,14 +136,99 @@ write.csv(predicciones_RF,"RF_M2.csv")
 # XGBOOST-----------------------------------------------------------------
 
 
-
-# ADABOOST M1 -----------------------------------------------------------------
-
-
 # GRADIENT BOOSTING ------------------------------------------------------------
+#A. PREPROCESAMIENTO
+gb_train <- df %>% filter(grupo == "train") %>%
+  select(price,lat,lon, surface_imputado, bathrooms, rooms,
+         bedrooms, estudio, parqueadero, distancia_college,
+         distancia_hospital, distancia_marketplace, terraza,
+         seguridad, piso, distancia_commercial, walkin_closet,
+         cocina_lujo, distancia_cafe, patio_lavanderia,
+         saloncomunal_recepcion, distancia_bank, distancia_bus_station,
+         year, property_type, cocina_estandar, sala_comedor, lujos, remodelado)
+
+rec_gb <- recipe(price ~ ., data = gb_train) %>%
+  step_unknown(all_nominal_predictors()) %>%
+  step_impute_mean(all_numeric_predictors()) %>%
+  step_novel(all_nominal_predictors()) %>%
+  step_zv(all_predictors())
+
+prepped_gb <- prep(rec_gb, training = gb_train)
+gb_train <- bake(prepped_gb, new_data = gb_train)
+
+set.seed(88)
+ctrl_cv <- trainControl(
+  method = "cv",  
+  number = 5,  
+  verboseIter = TRUE
+)
 
 
-################################################################################
+#B. EVALUACIÓN DE MODELOS
+gb_train_sf <- st_as_sf(
+  gb_train,
+  coords = c("lon", "lat"), 
+  crs = 4326
+)
+
+set.seed(88)
+block_folds <- spatial_block_cv(gb_train_sf, v = 5)  # 5 bloques espaciales
+
+resultados_gbm <- data.frame(modelo = character(), Fold = integer(), MAE = numeric(), stringsAsFactors = FALSE)
+
+for (nombre in names(formulas)) {
+  for (i in seq_along(block_folds$splits)) {
+    split <- block_folds$splits[[i]]
+    
+    train_data <- analysis(split)  
+    test_data <- assessment(split)  
+    
+    gbm_cv <- train(
+      formulas[[nombre]],
+      data = train_data,
+      method = "gbm",
+      metric = "MAE",
+      verbose = FALSE
+    )
+  
+    predicciones <- predict(gbm_cv, newdata = test_data)
+    mae_val <- mean(abs(predicciones - test_data$price))
+    
+    resultados_gbm <- rbind(resultados_gbm, data.frame(modelo = nombre, Fold = i, MAE = mae_val))
+  }
+}
+
+
+resultados_gbm <- resultados_gbm[order(resultados_gbm$MAE), ]
+print(resultados_gbm)
+
+mejor_modelo <- resultados_gbm %>%
+  group_by(modelo) %>%
+  summarise(MAE_promedio = mean(MAE)) %>%
+  arrange(MAE_promedio)
+
+print(mejor_modelo)
+
+
+#C. PREDICCIÓN MEJOR MODELO
+gbm_final <- train(
+  formulas[["modelo1"]],
+  data = gb_train,
+  method = "gbm",
+  metric = "MAE",
+  verbose = FALSE
+)
+
+gb_test <- df %>% filter(grupo == "test")
+gb_test <- bake(prepped_gb, new_data = gb_test)
+predicciones_gbm <- predict(gbm_final, newdata = gb_test)
+
+resultado_predicciones <- gb_test %>%
+  dplyr::select(property_id) %>%
+  dplyr::mutate(price = predicciones_gbm)
+
+write.csv(resultado_predicciones, "gb_M1.csv", row.names = FALSE)
+
 # ELASTIC NET ------------------------------------------------------------------
 neural_cols <- c("grupo","price","surface_imputado","surface_covered","surface","bathrooms",
             "rooms","bedrooms","codigo_zona_estrato","estudio","estrato",
@@ -392,5 +481,4 @@ rm(list = setdiff(ls(), c("df","coordenadas.x.centroides","coordenadas.y.centroi
   "tune_res4","workflow_4", "rec_4","predictions_EN"  # ← corregido: se llama predictiones_EN, no predictions_EN
   )))
 
-################################################################################
 # NEURAL NETWORK ---------------------------------------------------------------
