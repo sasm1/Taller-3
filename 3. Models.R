@@ -35,14 +35,15 @@ p_load(tidyverse, # Manipular dataframes
        xgboost,
        spatialsample,
        sf)
-install.packages("keras")
-library(reticulate)
-reticulate::virtualenv_create("r-reticulate", python = install_python())
-library(keras)
-install_keras(envname = "r-reticulate")
+
+#Instalación Keras
+#install.packages("keras")
+#library(reticulate)
+#reticulate::virtualenv_create("r-reticulate", python = install_python())
+#library(keras)
+#install_keras(envname = "r-reticulate")
 
 load("Datos_limpios.RData")
-colnames(df)
 # LINEAR REGRESSION  -----------------------------------------------------------
 
 
