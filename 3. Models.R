@@ -35,9 +35,14 @@ p_load(tidyverse, # Manipular dataframes
        xgboost,
        spatialsample,
        sf)
+install.packages("keras")
+library(reticulate)
+reticulate::virtualenv_create("r-reticulate", python = install_python())
+library(keras)
+install_keras(envname = "r-reticulate")
 
-load("temporal.RData")
-
+load("Datos_limpios.RData")
+colnames(df)
 # LINEAR REGRESSION  -----------------------------------------------------------
 
 
@@ -56,12 +61,12 @@ vars<- c("price", "year", "surface_imputado", "rooms",
                      "lujos", "remodelado",  "distancia_commercial",
                      "distancia_bank", "distancia_bus_station",
                      "distancia_cafe",  "distancia_college",
-                     "distancia_hospital", "distancia_marketplace")
+                     "distancia_hospital", "distancia_marketplace","codigo_barrio","valor_comercial")
 
 RF_data  <- df %>% filter(grupo == "train") %>%  select(all_of(vars)) 
+RF_data <- RF_data|> st_drop_geometry()
 
-
-# A. Recetas
+# A. Receta
 rec_rf <- recipe(price ~ ., data = RF_data) %>%
   step_unknown(all_nominal_predictors()) %>%
   step_impute_mean(all_numeric_predictors()) %>%
@@ -76,17 +81,16 @@ split_rf <- initial_split(RF_data, prop = 0.8)
 RF_train <- training(split_rf)
 RF_test <- testing(split_rf)
 
-# B. Distintas combinaciones de variables
+# B. Entrenar y evaluar cada modelo
 formulas <- list(
   modelo1 = price ~ surface_imputado + bathrooms + rooms + bedrooms + estudio + parqueadero + distancia_college,
   modelo2 = price ~ surface_imputado + bathrooms + bedrooms + parqueadero + distancia_hospital + distancia_marketplace,
-  modelo3 = price ~ surface_imputado + lujos + remodelado + terraza + seguridad + piso + distancia_commercial,
+  modelo3 = price ~ surface_imputado + bathrooms + bedrooms + parqueadero + distancia_hospital + distancia_marketplace + codigo_barrio +valor_comercial,
   modelo4 = price ~ surface_imputado + rooms + estudio + walkin_closet + cocina_lujo + distancia_cafe,
   modelo5 = price ~ surface_imputado + bathrooms + patio_lavanderia + saloncomunal_recepcion + distancia_bank + distancia_bus_station,
-  modelo6 = price ~ year + surface_imputado + rooms + bedrooms+ bathrooms + property_type +cocina_lujo + cocina_estandar+ parqueadero+terraza+sala_comedor+patio_lavanderia+lujos
+  modelo6= price ~ surface_imputado + rooms + bathrooms + property_type + piso + codigo_barrio + valor_comercial + walkin_closet + lujos
 )
 
-# C. Entrenar y evaluar cada modelo
 modelos_rf <- list()
 resultados <- data.frame(modelo = character(), MAE = numeric(), stringsAsFactors = FALSE)
 for (nombre in names(formulas)) {
@@ -112,59 +116,93 @@ for (nombre in names(formulas)) {
 resultados <- resultados[order(resultados$MAE), ]
 print(resultados)
 
-#D.Predicción con el mejor modelo 
-df_test <- df %>%
-  filter(grupo == "test")  
-df_test_preprocesado <- bake(prepped_rf, new_data = df_test)
+#Tunear el mejor modelo
+grid_rf <- expand.grid(
+  mtry = c(3, 5, 7, floor(sqrt(ncol(RF_train)))),
+  splitrule = c("variance", "extratrees"),  # Include splitrule!
+  min.node.size = c(1, 5, 10)
+)
 
-rf2_fit <- ranger(
-  formula = price ~ surface_imputado + bathrooms + bedrooms + parqueadero + distancia_hospital + distancia_marketplace,
+ctrl_rf <- trainControl(
+  method = "cv",
+  number = 5,
+  verboseIter = TRUE
+)
+
+rf_tuned <- train(
+  price ~ surface_imputado + bathrooms + bedrooms + parqueadero + distancia_hospital + distancia_marketplace + codigo_barrio + valor_comercial,
   data = RF_train,
-  num.trees = 500,
-  mtry = floor(sqrt(ncol(RF_train))),
-  min.node.size = 5,
+  method = "ranger",
+  trControl = ctrl_rf,
+  tuneGrid = grid_rf,
   importance = "impurity"
 )
 
-predicciones_RF <- predict(rf2_fit, data = df_test)$predictions
-predicciones_RF <- data.frame(
-  property_id = df_test$property_id,
-  price = predicciones  
+
+best_params <- rf_tuned$bestTune
+print(best_params)
+
+
+rf_final <- ranger(
+  formula = price ~ surface_imputado + bathrooms + bedrooms + parqueadero + distancia_hospital + distancia_marketplace + codigo_barrio + valor_comercial,
+  data = RF_train,
+  num.trees = 500,
+  mtry = best_params$mtry,
+  min.node.size = best_params$min.node.size,
+  importance = "impurity"
 )
 
-write.csv(predicciones_RF,"RF_M2.csv")
+#C. Predicción
+df_test <- df %>% filter(grupo == "test")
+df_test_preprocesado <- bake(prepped_rf, new_data = df_test)
+
+predicciones_RF <- predict(rf_final, data = df_test_preprocesado)$predictions
+
+predicciones_RF <- data.frame(
+  property_id = df_test$property_id,
+  price = predicciones_RF
+)
+
+write.csv(predicciones_RF, "RF_Tuned.csv", row.names = FALSE)
 
 # XGBOOST-----------------------------------------------------------------
 
 
 # GRADIENT BOOSTING ------------------------------------------------------------
 #A. PREPROCESAMIENTO
-gb_train <- df %>% filter(grupo == "train") %>%
-  select(price,lat,lon, surface_imputado, bathrooms, rooms,
-         bedrooms, estudio, parqueadero, distancia_college,
-         distancia_hospital, distancia_marketplace, terraza,
-         seguridad, piso, distancia_commercial, walkin_closet,
-         cocina_lujo, distancia_cafe, patio_lavanderia,
-         saloncomunal_recepcion, distancia_bank, distancia_bus_station,
-         year, property_type, cocina_estandar, sala_comedor, lujos, remodelado)
+gb_data <- df|> st_drop_geometry()
 
-rec_gb <- recipe(price ~ ., data = gb_train) %>%
-  step_unknown(all_nominal_predictors()) %>%
-  step_impute_mean(all_numeric_predictors()) %>%
-  step_novel(all_nominal_predictors()) %>%
+gb_train <- gb_data %>% filter(grupo == "train") %>%
+  select(price, surface_imputado, bathrooms, rooms, 
+         bedrooms, estudio, parqueadero, distancia_college, 
+         distancia_hospital, distancia_marketplace, piso, 
+         codigo_barrio, valor_comercial, property_type, 
+         walkin_closet, lujos)
+gb_train <- gb_train %>% na.omit()
+
+class(gb_train)
+
+rec_gb <- recipe(price ~ ., data = gb_train) |>
+  step_normalize(all_numeric_predictors()) |>  
+  step_dummy(all_nominal_predictors()) |>  
+  step_novel(all_nominal_predictors()) |> 
   step_zv(all_predictors())
 
 prepped_gb <- prep(rec_gb, training = gb_train)
 gb_train <- bake(prepped_gb, new_data = gb_train)
-
-set.seed(88)
-ctrl_cv <- trainControl(
-  method = "cv",  
-  number = 5,  
-  verboseIter = TRUE
+colnames(gb_train)
+#B. Modelos
+formulas <- list(
+  modelo1 = price ~ surface_imputado + bathrooms + rooms + bedrooms + parqueadero_Sí + distancia_college,
+  modelo2 = price ~ surface_imputado + bathrooms + bedrooms + parqueadero_Sí + distancia_hospital + distancia_marketplace + codigo_barrio + valor_comercial,
+  modelo3 = price ~ surface_imputado + rooms + bathrooms + property_type_Casa + piso + codigo_barrio + valor_comercial + walkin_closet_Sí + lujos_Sí
 )
-
-
+grid_gbm <- expand.grid(
+  interaction.depth = c(3, 5, 7),  
+  n.trees = c(100, 300, 500),  
+  shrinkage = c(0.01, 0.1, 0.3),  
+  n.minobsinnode = c(5, 10, 20)  
+)
 #B. EVALUACIÓN DE MODELOS
 gb_train_sf <- st_as_sf(
   gb_train,
@@ -191,7 +229,7 @@ for (nombre in names(formulas)) {
       metric = "MAE",
       verbose = FALSE
     )
-  
+    
     predicciones <- predict(gbm_cv, newdata = test_data)
     mae_val <- mean(abs(predicciones - test_data$price))
     
@@ -209,26 +247,6 @@ mejor_modelo <- resultados_gbm %>%
   arrange(MAE_promedio)
 
 print(mejor_modelo)
-
-
-#C. PREDICCIÓN MEJOR MODELO
-gbm_final <- train(
-  formulas[["modelo1"]],
-  data = gb_train,
-  method = "gbm",
-  metric = "MAE",
-  verbose = FALSE
-)
-
-gb_test <- df %>% filter(grupo == "test")
-gb_test <- bake(prepped_gb, new_data = gb_test)
-predicciones_gbm <- predict(gbm_final, newdata = gb_test)
-
-resultado_predicciones <- gb_test %>%
-  dplyr::select(property_id) %>%
-  dplyr::mutate(price = predicciones_gbm)
-
-write.csv(resultado_predicciones, "gb_M1.csv", row.names = FALSE)
 
 # ELASTIC NET ------------------------------------------------------------------
 neural_cols <- c("grupo","price","surface_imputado","surface_covered","surface","bathrooms",
@@ -482,3 +500,98 @@ rm(list = setdiff(ls(), c("df","coordenadas.x.centroides","coordenadas.y.centroi
   "tune_res4","workflow_4", "rec_4","predictions_EN"  # ← corregido: se llama predictiones_EN, no predictions_EN
   )))
 # NEURAL NETWORK ---------------------------------------------------------------
+#A. Preparación de datos
+neural_data <- df %>%
+  filter(grupo == "train") %>%
+  select(price, surface_imputado, bathrooms, bedrooms,
+         distancia_hospital, distancia_marketplace, codigo_barrio, valor_comercial)
+neural_data <- neural_data %>% na.omit()
+
+X <- neural_data %>% select(-price)
+X <- X %>% st_drop_geometry()
+y <- neural_data$price
+X_scaled <- scale(X)
+y_scaled <- scale(y)[,1]
+
+X_matrix <- as.matrix(X_scaled)
+y_vector <- as.numeric(y_scaled)
+
+
+set.seed(2)
+train_indices <- sample(1:nrow(X_matrix), 0.8 * nrow(X_matrix))
+
+X_train <- X_matrix[train_indices, ]
+X_val <- X_matrix[-train_indices, ]
+y_train <- y_vector[train_indices]
+y_val <- y_vector[-train_indices]
+
+cat("Datos de entrenamiento:", nrow(X_train), "filas\n")
+cat("Datos de validación:", nrow(X_val), "filas\n")
+
+# B. CONSTRUCCIÓN DE LA RED NEURONAL
+model <- keras_model_sequential() %>%
+  layer_dense(units = 128, activation = "relu", input_shape = ncol(X_train)) %>%
+  layer_dropout(rate = 0.3) %>% 
+  layer_dense(units = 64, activation = "relu") %>%
+  layer_dropout(rate = 0.2) %>%
+  layer_dense(units = 32, activation = "relu") %>%
+  layer_dense(units = 1, activation = "linear")  # Capa de salida para regresión
+summary(model)
+
+model %>% compile(
+  optimizer = optimizer_adam(learning_rate = 0.001),
+  loss = "mse",  # Error cuadrático medio para regresión
+  metrics = c("mae")  # Error absoluto medio
+)
+
+early_stopping <- callback_early_stopping(
+  monitor = "val_loss",
+  patience = 15,
+  restore_best_weights = TRUE
+)
+
+reduce_lr <- callback_reduce_lr_on_plateau(
+  monitor = "val_loss",
+  factor = 0.5,
+  patience = 10,
+  min_lr = 0.00001
+)
+
+history <- model %>% fit(
+  X_train, y_train,
+  epochs = 100,
+  batch_size = 32,
+  validation_data = list(X_val, y_val),
+  callbacks = list(early_stopping, reduce_lr),
+  verbose = 1
+)
+
+predictions_scaled <- model %>% predict(X_val)
+
+mean_price <- attr(scale(neural_data$price), "scaled:center")
+sd_price <- attr(scale(neural_data$price), "scaled:scale")
+
+predictions <- predictions_scaled * sd_price + mean_price
+actual_values <- y_val * sd_price + mean_price
+
+mae <- mean(abs(predictions - actual_values))
+cat("MAE:", round(mae, 2), "\n")
+
+
+#C. Predicción
+test_data <- df %>%
+  filter(grupo == "test") %>%
+  select(property_id, surface_imputado, bathrooms, bedrooms,
+         distancia_hospital, distancia_marketplace, codigo_barrio, valor_comercial) %>%
+  na.omit()
+
+test_data <- test_data %>% st_drop_geometry()
+
+X_test_matrix <- as.matrix(test_data[, -1])  
+X_test_scaled <- scale(X_test_matrix, center = attr(X_scaled, "scaled:center"),
+                       scale = attr(X_scaled, "scaled:scale"))
+
+predictions_scaled <- model %>% predict(X_test_scaled)
+predictions <- predictions_scaled * sd_price + mean_price
+submission <- data.frame(property_id = test_data$property_id, price = predictions)
+write.csv(submission, "RED.csv", row.names = FALSE)
