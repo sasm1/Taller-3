@@ -593,3 +593,73 @@ predictions_scaled <- model %>% predict(X_test_scaled)
 predictions <- predictions_scaled * sd_price + mean_price
 submission <- data.frame(property_id = test_data$property_id, price = predictions)
 write.csv(submission, "RED.csv", row.names = FALSE)
+
+################################################################################
+# SUPERLERNER -----------------------------------------------------------------
+
+# A. PREPARAR DATA 
+# Preparamos los datos base
+train <- elastics_train2 %>% 
+  mutate(across(where(is.factor), as.numeric)) %>%
+  as.data.frame()
+
+test <- elastics_test_real %>%
+  mutate(across(where(is.factor), as.numeric)) %>%
+  as.data.frame()
+
+# Variables
+y_train <- train$price
+X_train <- train %>% select(-price)
+
+X_train <- X_train %>%
+  mutate(across(where(is.numeric), ~ ifelse(is.na(.), mean(., na.rm = TRUE), .)))
+which(sapply(X_train, function(x) length(unique(x))) <= 1)
+X_train <- X_train %>% select(where(~ n_distinct(.) > 1))
+
+X_test <- X_test %>%
+  mutate(across(where(is.numeric), ~ ifelse(is.na(.), mean(., na.rm = TRUE), .)))
+which(sapply(X_test, function(x) length(unique(x))) <= 1)
+X_test <- X_test %>% select(where(~ n_distinct(.) > 1))
+X_test <- test %>% select(-price,-property_id,-grupo)
+
+
+# B. DEFINIR MODELOS
+learners <- c("SL.glmnet", "SL.xgboost")
+sl_fit
+
+#C. CORRER SUPERLEARNER
+set.seed(123)
+sl_fit <- SuperLearner(
+  Y = y_train,
+  X = X_train,
+  family = gaussian(),
+  SL.library = learners,
+  method = "method.NNLS",  # mezcla por regresión sin restricciones
+  verbose = TRUE
+)
+
+#D. PREDECIR CONJUNTO DE PRUEBA
+xgb_pred <- predict(sl_fit$fitLibrary$SL.xgboost_All$object, newdata = as.matrix(X_test))
+length(xgb_pred)  # debe ser 10286
+glmnet_pred <- predict(sl_fit$fitLibrary$SL.glmnet_All$object, newx = as.matrix(X_test), s = sl_fit$fitLibrary$SL.glmnet_All$object$lambda.min)
+length(glmnet_pred)  # también debe ser 10286
+
+
+predictions_SL <- data.frame(
+  property_id = elastics_test_real$property_id,
+  price = sl_preds
+)
+
+
+xgb_pred <- XGB_4_747_3_1_06$price
+  
+pesos <- sl_fit$coef
+predicciones_finales <- pesos["SL.glmnet_All"] *predictiones_EN +
+  pesos["SL.xgboost_All"] * xgb_pred
+
+predicciones_finales <- data.frame(
+  property_id = elastics_test_real$property_id,
+  price = predicciones_finales
+)
+write.csv(predicciones_finales, "superlearner_2.csv", row.names = FALSE)
+
