@@ -44,11 +44,6 @@ p_load(tidyverse, # Manipular dataframes
 #install_keras(envname = "r-reticulate")
 
 load("Datos_limpios.RData")
-# LINEAR REGRESSION  -----------------------------------------------------------
-
-
-# CARTS ------------------------------------------------------------------------
-
 
 # RANDOM FOREST-----------------------------------------------------------------
 vars<- c("price", "year", "surface_imputado", "rooms",
@@ -162,9 +157,6 @@ predicciones_RF <- data.frame(
 )
 
 write.csv(predicciones_RF, "RF_Tuned.csv", row.names = FALSE)
-
-# XGBOOST-----------------------------------------------------------------
-
 
 # GRADIENT BOOSTING ------------------------------------------------------------
 #A. PREPROCESAMIENTO
@@ -594,7 +586,6 @@ predictions <- predictions_scaled * sd_price + mean_price
 submission <- data.frame(property_id = test_data$property_id, price = predictions)
 write.csv(submission, "RED.csv", row.names = FALSE)
 
-################################################################################
 # SUPERLERNER -----------------------------------------------------------------
 
 # A. PREPARAR DATA 
