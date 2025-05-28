@@ -19,28 +19,20 @@ Contains datasets required for running the scripts:
 Contains CSV output files from different prediction models used for submission.
 
 ### 📁 Savings
+Contains images and plots
 
 
 ## Project Description
+The goal of this project was to develop a predictive model for estimating residential property prices in Chapinero, Bogotá, using machine learning techniques.
+Our approach combines structural property characteristics, spatial data from OpenStreetMap, and natural language processing features derived from property titles and descriptions to predict asking prices with high accuracy.
 
-This project implements multiple machine learning models to predict poverty status (poor vs. non-poor) of households in Colombia based on socioeconomic indicators. The models directly classify households without using intermediate metrics, providing straightforward binary predictions.
 
-## Models Implemented
-
-The repository includes several classification algorithms:
-- Logistic Regression
-- Boosting (GBoost-XGBoost)
-- Random Forest
-- Naive Bayes
-- Elastic Net
 
 ## How to Use
-
-1. Start by exploring the `Documents` folder to understand the variables and context
-2. Required datasets are available in the `Stores` folder
-3. The data analysis and variables construction can be found in `Scripts/data_process.R`
-4. The code for model predicctions can be found in `Scripts/Taller 2- G7.Rmd`
-5. Model predictions for submission are stored in the `Models` folder
+1. Required datasets are available in the `Stores` folder
+2. The data analysis and variables construction can be found in `Scripts/data_process.R`
+3. The code for model predicctions can be found in `Scripts/Taller 3- G7.Rmd`
+4. Model predictions for submission are stored in the `Submissions` folder
 
 
 ## Contributors
